@@ -252,7 +252,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
 
 
                 l1_test /= len(config['cameras'])
-                print(f"\nITER {iteration} Evaluating {config["name"]}:\n\tL1: {l1_test}\n\tPSNR: {psnr_test}\n\tSSIM: {ssim_test}\n\tLPIPS: {lpips_test}")
+                print(f"\nITER {iteration} Evaluating {config['name']}:\n\tL1: {l1_test}\n\tPSNR: {psnr_test}\n\tSSIM: {ssim_test}\n\tLPIPS: {lpips_test}")
                 if tb_writer:
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
