@@ -278,9 +278,11 @@ if __name__ == "__main__":
     parser.add_argument('--disable_viewer', action='store_true', default=False)
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
-    parser.add_argument("--source_path", type=str, default="./data/tree")
+    parser.add_argument("--data_path_ml", type=str, default="./data/tree")
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
+
+    args.source_path = args.data_path_ml
 
     print("Optimizing " + args.model_path)
 
