@@ -1,11 +1,11 @@
-name: gaussian_splatting
+name: c3dgs
 channels:
   - pytorch
   - conda-forge
   - defaults
 dependencies:
   - cudatoolkit=11.6
-  - plyfile
+  - plyfile=0.8.1
   - python=3.7.13
   - pip=22.3.1
   - pytorch=1.12.1
@@ -13,8 +13,8 @@ dependencies:
   - torchvision=0.13.1
   - tqdm
   - pip:
+    - dahuffman==0.4.1
+    - vector-quantize-pytorch==1.8.1
+    - git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
     - submodules/diff-gaussian-rasterization
     - submodules/simple-knn
-    - submodules/fused-ssim
-    - opencv-python
-    - joblib
