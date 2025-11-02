@@ -41,6 +41,102 @@ try:
 except:
     SPARSE_ADAM_AVAILABLE = False
 
+
+
+
+
+import torch.nn as nn
+
+
+class FrequencyLoss(nn.Module):
+
+
+    def __init__(self, high_pass_cutoff=0.1):
+        """
+        Khởi tạo loss.
+
+        Args:
+            high_pass_cutoff (float): Tỷ lệ phần trăm (từ 0 đến 1) của phổ tần số
+                                     trung tâm (tần số thấp) sẽ bị loại bỏ.
+        """
+        super(FrequencyLoss, self).__init__()
+        self.high_pass_cutoff = high_pass_cutoff
+
+    def create_high_pass_mask(self, shape, device):
+        """
+        Tạo một mặt nạ high-pass.
+        Mặt nạ này sẽ bằng 0 ở trung tâm (tần số thấp) và 1 ở rìa (tần số cao).
+        """
+        B, C, H, W = shape
+        mask = torch.ones(B, C, H, W, device=device)
+
+        center_h, center_w = H // 2, W // 2
+        cutoff_h = int(H * self.high_pass_cutoff / 2)
+        cutoff_w = int(W * self.high_pass_cutoff / 2)
+
+        mask[:, :, center_h - cutoff_h : center_h + cutoff_h,
+                   center_w - cutoff_w : center_w + cutoff_w] = 0
+
+        return mask
+
+    def forward(self, rendered_image, gt_image):
+        """
+        Tính toán L_freq.
+
+        Args:
+            rendered_image (torch.Tensor): Ảnh render, shape (B, C, H, W) hoặc (C, H, W).
+            gt_image (torch.Tensor): Ảnh ground-truth, shape (B, C, H, W) hoặc (C, H, W).
+
+        Returns:
+            torch.Tensor: Giá trị loss (vô hướng).
+        """
+
+        # --- THÊM KIỂM TRA SỐ CHIỀU ---
+        # Nếu ảnh đầu vào là 3D (C, H, W), thêm chiều Batch (B=1)
+        if rendered_image.dim() == 3:
+            rendered_image = rendered_image.unsqueeze(0) # (C, H, W) -> (1, C, H, W)
+
+        if gt_image.dim() == 3:
+            gt_image = gt_image.unsqueeze(0) # (C, H, W) -> (1, C, H, W)
+        # -----------------------------
+
+        # 1. Chuyển ảnh sang miền tần số (F)
+        F_render = torch.fft.fft2(rendered_image, dim=(-2, -1))
+        F_gt = torch.fft.fft2(gt_image, dim=(-2, -1))
+
+        # 2. Dịch chuyển thành phần tần số 0 (DC) vào trung tâm
+        F_render_shifted = torch.fft.fftshift(F_render, dim=(-2, -1))
+        F_gt_shifted = torch.fft.fftshift(F_gt, dim=(-2, -1))
+
+        # 3. Tạo và áp dụng mặt nạ high-pass để lấy F_hat
+        # Lấy shape từ tensor đã chắc chắn là 4D
+        mask = self.create_high_pass_mask(rendered_image.shape, rendered_image.device)
+        F_hat_render = F_render_shifted * mask
+        F_hat_gt = F_gt_shifted * mask
+
+        # 4. Tính toán Biên độ (|F_hat|) và Pha (∠F_hat)
+        mag_render = torch.abs(F_hat_render)
+        mag_gt = torch.abs(F_hat_gt)
+
+        phase_render = torch.angle(F_hat_render)
+        phase_gt = torch.angle(F_hat_gt)
+
+        # 5. Tính toán chênh lệch (Delta)
+        delta_mag = mag_render - mag_gt
+        delta_phase = phase_render - phase_gt
+
+        # 6. Tính toán L_freq (Công thức 5)
+        loss_mag = torch.abs(delta_mag).mean()
+        loss_phase = torch.abs(delta_phase).mean()
+
+        L_freq = loss_mag + loss_phase
+
+        return L_freq
+
+
+
+
+
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
 
     if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam":
@@ -68,6 +164,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     viewpoint_indices = list(range(len(viewpoint_stack)))
     ema_loss_for_log = 0.0
     ema_Ll1depth_for_log = 0.0
+
+
+    loss_fre = FrequencyLoss(high_pass_cutoff=0.1).cuda()
+
+
 
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
@@ -124,7 +225,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         else:
             ssim_value = ssim(image, gt_image)
 
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value) + loss_fre(image, gt_image) * 0.01
 
         # Depth regularization
         Ll1depth_pure = 0.0
